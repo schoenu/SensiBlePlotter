@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue/flutter_blue.dart';
 import 'package:sensi_ble_plotter/widgets.dart';
+import 'dart:convert' show utf8;
 
 void main() {
   runApp(FlutterBlueApp());
@@ -65,13 +66,35 @@ class BluetoothOffScreen extends StatelessWidget {
 
 class FindDevicesScreen extends StatelessWidget {//
   //List<Guid> service_filter = [new Guid('ebe0ccb0-7a0a-4b0c-8a1a-6ff2997da3a6')];
-  List<Guid> service_filter = [new Guid('0000181a-0000-1000-8000-00805f9b34fb'),
-    new Guid('ebe0ccb0-7a0a-4b0c-8a1a-6ff2997da3a6')];
+  List<Guid> service_filter = [new Guid('00008000-b38d-4985-720e-0f993a68ee41'),
+    new Guid('00005588-b38d-4985-720e-0f993a68ee41'),
+    new Guid('0000181a-0000-1000-8000-00805f9b34fb')];
+
+  // Listen to scan results
+  // ignore: cancel_subscriptions
+//  var filter_scan_results = FlutterBlue.instance.scanResults.listen(ondata)  {
+//    debugPrint('got scan result');
+//  });
+//
+//  _discoverServicesAndSetTime() async {
+//    List<BluetoothService> services = await FlutterBlue.instance.scanResults.listen(onData);
+//    services.forEach((service) async {
+//
+////  Future<int> filter_scan_results(Stream<int> stream) async {
+////    var sum = 0;
+////    await for (var value in FlutterBlue.instance.scanResults) {
+////      debugPrint('recieced result');
+////    }
+////    return sum;
+//  }
+//  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text('Find Devices'),
+        backgroundColor: Colors.lightGreen,
       ),
       body: RefreshIndicator(
         onRefresh: () =>
@@ -144,14 +167,43 @@ class FindDevicesScreen extends StatelessWidget {//
           } else {
             return FloatingActionButton(
                 child: Icon(Icons.search),
+                backgroundColor: Colors.green,
                 onPressed: () => FlutterBlue.instance
                     .startScan(timeout: Duration(seconds: 4),
-                    withServices: service_filter
+//                    withServices: service_filter
                     ));
           }
         },
       ),
     );
+  }
+}
+
+class PlotTile{
+  String descriptorString;
+
+  PlotTile(descriptorString){
+    debugPrint('created PlotTile '+descriptorString);
+    this.descriptorString = descriptorString;
+  }
+
+  void onData(List<int> rawValue) {
+    if (rawValue.length == 4) {
+      ByteBuffer buffer = new Int8List.fromList(rawValue).buffer;
+      ByteData byteData = new ByteData.view(buffer);
+      double doubleValue = byteData.getFloat32(0, Endian.little);
+      debugPrint(this.descriptorString+': '+doubleValue.toString());
+    }
+    else if (rawValue.length == 2) {
+      debugPrint(rawValue.toString());
+      ByteBuffer buffer = new Int8List.fromList(rawValue).buffer;
+      ByteData byteData = new ByteData.view(buffer);
+      int intValue = byteData.getUint16(0, Endian.little);
+      debugPrint(this.descriptorString+': '+intValue.toString());
+    }
+    else {
+      debugPrint('Unknown value type for '+this.descriptorString);
+    }
   }
 }
 
@@ -169,6 +221,43 @@ class DeviceScreen extends StatelessWidget {
       math.nextInt(255),
       math.nextInt(255)
     ];
+  }
+
+  _subscribeToServices() async {
+    List<Guid> acceptedGUID = [
+      //RH
+      new Guid('00001234-b38d-4985-720e-0f993a68ee41'),
+      new Guid('00001235-b38d-4985-720e-0f993a68ee41'),
+      //T
+      new Guid('00002234-b38d-4985-720e-0f993a68ee41'),
+      new Guid('00002235-b38d-4985-720e-0f993a68ee41'),
+    ];
+
+    List<BluetoothService> services = await device.discoverServices();
+    services.forEach((service) async {
+      //debugPrint(service.uuid.toString());
+      if (acceptedGUID.contains(service.uuid)) {
+        debugPrint('Accepted service was found');
+        for (BluetoothCharacteristic char in service.characteristics){
+          if (acceptedGUID.contains(service.uuid)) {
+
+            var descriptors = char.descriptors;
+            for(BluetoothDescriptor d in descriptors) {
+              List<int> descriptorIntList = await d.read();
+              if (descriptorIntList.length > 0) {
+                List<int> descriptorIntList = await descriptors.last.read();
+                String descriptorString = new String.fromCharCodes(descriptorIntList);
+//                descriptorString = utf8.encode(input)
+                debugPrint(descriptorString);
+                PlotTile pt = new PlotTile(descriptorString);
+                await char.setNotifyValue(true);
+                char.value.listen(pt.onData);
+              }
+            }
+          }
+        }
+      }
+    });
   }
 
   _discoverServicesAndSetTime() async {
@@ -313,7 +402,7 @@ class DeviceScreen extends StatelessWidget {
                         children: [
                           IconButton(
                             icon: Icon(Icons.add_alarm),
-                            onPressed: () => _discoverServicesAndSetTime(),
+                            onPressed: () => _subscribeToServices(),
                             ),
                           IconButton(
                             icon: Icon(Icons.search),

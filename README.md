@@ -1,6 +1,6 @@
-# MijaTimeSync
+# SensiBlePlotter
 
-Sync time from your phone with Mija LYWSD02 gadget
+Generic BLE app to plat any value which can be subscribed
 
 ## based on
 https://github.com/pauldemarco/flutter_blue
